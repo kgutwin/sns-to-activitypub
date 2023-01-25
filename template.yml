@@ -1,0 +1,183 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: SNS to ActivityPub bridge
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  DomainName:
+    Type: String
+
+  HostedZoneId:
+    Type: String
+
+  FollowerAllowList:
+    Type: List<String>
+
+  InfoTopicARN:
+    Type: String
+    Default: CREATE
+
+  AlertTopicARN:
+    Type: String
+    Default: CREATE
+
+Conditions:
+  NeedsInfoTopic: !Equals [!Ref InfoTopicARN, CREATE]
+  NeedsAlertTopic: !Equals [!Ref AlertTopicARN, CREATE]
+    
+Globals:
+  Function:
+    Runtime: python3.9
+    CodeUri: lambdas
+    
+Resources:
+  InfoTopic:
+    Condition: NeedsInfoTopic
+    Type: AWS::SNS::Topic
+
+  AlertTopic:
+    Condition: NeedsAlertTopic
+    Type: AWS::SNS::Topic
+    
+  DataTable:
+    Type: AWS::Serverless::SimpleTable
+
+  IncomingQueue:
+    Type: AWS::SQS::Queue
+
+  KmsKey:
+    Type: AWS::KMS::Key
+    Properties:
+      KeySpec: RSA_2048
+      KeyUsage: SIGN_VERIFY
+      KeyPolicy:
+        Version: 2012-10-17
+        Statement:
+          - Sid: Enable IAM policies
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action: "kms:*"
+            Resource: "*"
+
+  LambdaPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: Grants access to KMS and DynamoDB
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: KMSAccess
+            Effect: Allow
+            Action:
+              - "kms:GetPublicKey"
+              - "kms:DescribeKey"
+              - "kms:Sign"
+              - "kms:Verify"
+            Resource: !GetAtt KmsKey.Arn
+          - Sid: DynamoAccess
+            Effect: Allow
+            Action:
+              - "dynamodb:GetItem"
+              - "dynamodb:PutItem"
+              - "dynamodb:UpdateItem"
+              - "dynamodb:DeleteItem"
+              - "dynamodb:BatchGetItem"
+              - "dynamodb:BatchWriteItem"
+              - "dynamodb:Query"
+              - "dynamodb:Scan"
+            Resource: !GetAtt DataTable.Arn
+          - Sid: SQSPut
+            Effect: Allow
+            Action:
+              - "sqs:SendMessage"
+            Resource: !GetAtt IncomingQueue.Arn
+    
+  NotificationSender:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: sender.handler
+      Environment:
+        Variables:
+          KEY_ID: !Ref KmsKey
+          TABLE_NAME: !Ref DataTable
+          DOMAIN_NAME: !Ref DomainName
+          INFO_TOPIC_ARN: !If
+            - NeedsInfoTopic
+            - !Ref InfoTopic
+            - !Ref InfoTopicARN
+          ALERT_TOPIC_ARN: !If
+            - NeedsAlertTopic
+            - !Ref AlertTopic
+            - !Ref AlertTopicARN
+      Policies:
+        - !Ref LambdaPolicy
+      Events:
+        InfoMsg:
+          Type: SNS
+          Properties:
+            Topic: !If
+              - NeedsInfoTopic
+              - !Ref InfoTopic
+              - !Ref InfoTopicARN
+        AlertMsg:
+          Type: SNS
+          Properties:
+            Topic: !If
+              - NeedsAlertTopic
+              - !Ref AlertTopic
+              - !Ref AlertTopicARN
+
+  IncomingProcess:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: incoming.handler
+      Environment:
+        Variables:
+          KEY_ID: !Ref KmsKey
+          TABLE_NAME: !Ref DataTable
+          DOMAIN_NAME: !Ref DomainName
+          FOLLOWER_ALLOW_LIST: !Join [',', !Ref FollowerAllowList]
+      Policies:
+        - !Ref LambdaPolicy
+      Events:
+        Queue:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt IncomingQueue.Arn
+            FunctionResponseTypes: ["ReportBatchItemFailures"]
+              
+  WebServer:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: api.handler
+      Environment:
+        Variables:
+          KEY_ID: !Ref KmsKey
+          TABLE_NAME: !Ref DataTable
+          DOMAIN_NAME: !Ref DomainName
+          INCOMING_QUEUE: !Ref IncomingQueue
+      Policies:
+        - !Ref LambdaPolicy
+      Events:
+        Web:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+
+  Api:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      Domain:
+        CertificateArn: !Ref Certificate
+        DomainName: !Ref DomainName
+        Route53:
+          HostedZoneId: !Ref HostedZoneId
+    
+  Certificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Ref DomainName
+      DomainValidationOptions:
+        - DomainName: !Ref DomainName
+          HostedZoneId: !Ref HostedZoneId
+      ValidationMethod: DNS
