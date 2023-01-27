@@ -4,7 +4,7 @@ from urllib.error import HTTPError
 
 import config
 import dynamo
-import as_http
+import apub.http
 
 
 def handle_one(record):
@@ -18,7 +18,7 @@ def handle_one(record):
         assert body['object'] == config.ACTOR
 
         # retrieve the follower's actor data
-        actor = as_http.get(body['actor'])
+        actor = apub.http.get(body['actor'])
         username = actor.get('preferredUsername', actor['id'].split('/')[-1])
         domain = actor['id'].split('/')[2]
         joined_name = f'{username}@{domain}'
@@ -40,7 +40,7 @@ def handle_one(record):
             })
         
         # respond back to the actor's inbox
-        as_http.post(actor['inbox'], {
+        apub.http.post(actor['inbox'], {
             "@context": "https://www.w3.org/ns/activitystreams",
             "id": f'{config.BASEURL}/{record["messageId"]}',
             "type": result,

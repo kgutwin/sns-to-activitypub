@@ -2,13 +2,16 @@ import os
 import re
 import boto3
 import base64
-from urllib import request
+import hashlib
+from datetime import datetime
+from urllib import request, parse
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.exceptions import InvalidSignature
 
 import config
-import as_http
+from apub import http
+from apig_http import responses
 
 kms = boto3.client('kms')
 
@@ -34,7 +37,7 @@ def create_signature_header(headers, target, method="post"):
             to_be_signed.append(f'{seek.lower()}: {headers[seek]}')
             
     to_be_signed = "\n".join(to_be_signed)
-            
+
     response = kms.sign(
         KeyId=os.environ['KEY_ID'],
         Message=to_be_signed.encode(),
@@ -52,7 +55,7 @@ def create_signature_header(headers, target, method="post"):
     return new_headers
 
 
-def verify_headers(headers, request_target, method="post"):
+def verify_headers(headers, request_target, method="post", digest=None):
     if 'signature' not in headers:
         raise InvalidSignature('missing signature header')
 
@@ -73,6 +76,22 @@ def verify_headers(headers, request_target, method="post"):
             message_parts.append(
                 f'(request-target): {method} {request_target}'
             )
+        elif signed_header_name == 'digest' and digest:
+            message_parts.append(f'digest: {digest}')
+        elif signed_header_name == 'date':
+            # verify the date is recent
+            try:
+                sent_date = datetime.strptime(headers['date'],
+                                              '%a, %d %b %Y %H:%M:%S GMT')
+                delta = datetime.utcnow() - sent_date
+                if delta.total_seconds() > (15 * 60):
+                    raise InvalidSignature('message is too old')
+                if delta.total_seconds() < -5:
+                    raise InvalidSignature('message came from the future')
+            except ValueError:
+                raise InvalidSignature('unrecognized date format - expecting'
+                                       ' "Thu, 01 Jan 1970 00:00:00 GMT"')
+            message_parts.append(f'date: {headers[signed_header_name]}')
         else:
             try:
                 message_parts.append(
@@ -86,7 +105,7 @@ def verify_headers(headers, request_target, method="post"):
     
     # retrieve the public key
     try:
-        actor = as_http.get(sig_parts['keyId'])
+        actor = http.get(sig_parts['keyId'])
         key = serialization.load_pem_public_key(
             actor['publicKey']['publicKeyPem'].encode()
         )
@@ -101,18 +120,22 @@ def verify_headers(headers, request_target, method="post"):
         hashes.SHA256()
     )
 
-    # The code above is somewhat simplified and missing some checks
-    # that I would advise implementing in a serious production
-    # application. For example:
-    # 
-    # * The request contains a Date header. Compare it with current
-    #   date and time within a reasonable time window to prevent
-    #   replay attacks.
-    # * It is advisable that requests with payloads in the body also
-    #   send a Digest header, and that header be signed along in the
-    #   signature. If it’s present, it should be checked as another
-    #   special case within the comparison string: Instead of taking
-    #   the digest value from the received header, recompute it from
-    #   the received body.
-    # 
-    # from https://blog.joinmastodon.org/2018/07/how-to-make-friends-and-verify-requests/
+    # return actor
+    return parse.urldefrag(sig_parts['keyId']).url
+
+def wrapped_verify_headers(func):
+    def _verify(event, context):
+        try:
+            sha = hashlib.sha256(event.get('body', b''))
+            event['actor'] = verify_headers(
+                event['headers'],
+                event['requestContext']['http']['path'],
+                method=event['requestContext']['http']['method'].lower(),
+                digest=base64.b64encode(sha.digest()).decode()
+            )
+        except InvalidSignature as ex:
+            traceback.print_exc()
+            return responses.HttpResponse('Invalid HTTP signature', 403)
+
+        return func(event, context)
+    return _verify

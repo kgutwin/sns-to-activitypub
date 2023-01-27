@@ -3,8 +3,8 @@ import json
 
 import config
 import dynamo
-import as_http
-import signatures
+import apub.http
+import apub.signatures
 
 
 def sns_to_post(record):
@@ -52,5 +52,5 @@ def handler(event, context):
                     'name': f'@{dest["username"]}',
                     'href': dest['actor_id']
                 }]
-            as_http.post(dest['inbox'], post)
+            apub.http.post(dest['inbox'], post)
 

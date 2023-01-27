@@ -49,10 +49,6 @@ Finally, post a message to one of the SNS topics and watch it be
 delivered to you within a few seconds!
 
 ## TODO
-
-* The HTTP Signature checks are currently skeletal; digest, time, and
-  source checks are nonexistent. This is not a critical issue but
-  could cause bad actors to potentially forge messages.
   
 * The bot user's profile is very incomplete. An icon would be nice,
   and maybe also a more descriptive name.

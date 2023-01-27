@@ -6,7 +6,7 @@ from datetime import datetime
 from urllib import request, parse
 from urllib.error import HTTPError
 
-import signatures
+from apub import signatures
 
 
 def get(url):
