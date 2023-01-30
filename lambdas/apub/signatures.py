@@ -1,5 +1,6 @@
 import os
 import re
+import json
 import boto3
 import base64
 import hashlib
@@ -126,6 +127,17 @@ def verify_headers(headers, request_target, method="post", digest=None):
 def wrapped_verify_headers(func):
     def _verify(event, context):
         try:
+            # filter out Delete messages
+            if event.get('body'):
+                try:
+                    body = json.loads(event['body'])
+                    if (body['type'] == 'Delete' and
+                        body['actor'] == parse.urldefrag(body['id']).url):
+                        return responses.HttpResponse('')
+                    
+                except (json.decoder.JSONDecodeError, KeyError):
+                    pass
+                
             sha = hashlib.sha256(event.get('body', b''))
             event['actor'] = verify_headers(
                 event['headers'],
