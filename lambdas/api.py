@@ -52,7 +52,7 @@ def actor_doc(event, context):
     })
     
 
-@router.register(config.ACTOR_INBOX_PATH)
+@router.register(config.ACTOR_INBOX_PATH, 'POST')
 @apub.signatures.wrapped_verify_headers
 def actor_inbox(event, context):
     # double-check that the event's actor is the same as the one
@@ -75,4 +75,4 @@ def handler(event, context):
 
     response = router.handle(event, context)
     print(json.dumps(response.to_http()))
-    return response
+    return response.to_http()
