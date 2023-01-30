@@ -6,11 +6,11 @@ from datetime import datetime
 from urllib import request, parse
 from urllib.error import HTTPError
 
-from apub import signatures
+from apub import signatures, utils
 
 
 def get(url):
-    url = parse.urldefrag(url).url
+    url = utils.trim_frag(url)
     req = request.Request(url, headers={
         'Accept': 'application/json',
         'User-Agent': 'sns-to-activitypub/1',
@@ -28,7 +28,7 @@ GET_CACHE = {}
 
 def get_cached(url, max_age=60.0):
     """Get, but with extra cache flavor"""
-    url = parse.urldefrag(url).url
+    url = utils.trim_frag(url)
     if url in GET_CACHE:
         if time.time() < GET_CACHE[url]['requested'] + max_age:
             return GET_CACHE[url]['json']

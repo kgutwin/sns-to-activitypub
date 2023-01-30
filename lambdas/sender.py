@@ -14,7 +14,8 @@ def sns_to_post(record):
     message_timestamp = record['Sns']['Timestamp']
     #message_body = f'<p>{record["Sns"]["Message"]}</p>'
     # let's linkify things properly
-    message_md = re.sub(r'(https?://\w+)', '[\1](\1)', record['Sns']['Message'])
+    message_md = re.sub(r'(https?://\S+)', r'[\1](\1)',
+                        record['Sns']['Message'])
     message_body = markdown.markdown(message_md)
     
     return {
@@ -42,7 +43,6 @@ def handler(event, context):
     print(json.dumps(event))
     for record in event['Records']:
         post = sns_to_post(record)
-        print(json.dumps(post))
 
         # deliver the post depending on the source topic
         topic = TOPICS[record['Sns']['TopicArn']]

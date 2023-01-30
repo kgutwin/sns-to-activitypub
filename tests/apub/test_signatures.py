@@ -156,7 +156,7 @@ def test_wrapped_verify_headers():
             return 'all good'
 
         ev = {
-            'body': b'test body',
+            'body': 'test body',
             'headers': {'foo': 'bar'},
             'requestContext': {'http': {'path': '/test', 'method': 'POST'}}
         }

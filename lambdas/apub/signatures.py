@@ -5,14 +5,14 @@ import boto3
 import base64
 import hashlib
 from datetime import datetime
-from urllib import request, parse
+from urllib import request
 from urllib.error import HTTPError
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.exceptions import InvalidSignature
 
 import config
-from apub import http
+from apub import http, utils
 from apig_http import responses
 
 kms = boto3.client('kms')
@@ -115,7 +115,7 @@ def verify_headers(headers, request_target, method="post", digest=None):
         if ex.code == 410:
             # Gone - we're probably processing a delete
             # it would be nice to verify that, but sadly we can't.
-            return parse.urldefrag(sig_parts['keyId']).url
+            return utils.trim_frag(sig_parts['keyId'])
         raise InvalidSignature('failed getting remote pubkey') from ex
     except Exception as ex:
         raise InvalidSignature('failed getting remote pubkey') from ex
@@ -129,12 +129,12 @@ def verify_headers(headers, request_target, method="post", digest=None):
     )
 
     # return actor
-    return parse.urldefrag(sig_parts['keyId']).url
+    return utils.trim_frag(sig_parts['keyId'])
 
 def wrapped_verify_headers(func):
     def _verify(event, context):
         try:
-            sha = hashlib.sha256(event.get('body', b''))
+            sha = hashlib.sha256(event.get('body', '').encode())
             event['actor'] = verify_headers(
                 event['headers'],
                 event['requestContext']['http']['path'],
