@@ -6,6 +6,7 @@ import base64
 import hashlib
 from datetime import datetime
 from urllib import request, parse
+from urllib.error import HTTPError
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.exceptions import InvalidSignature
@@ -110,6 +111,12 @@ def verify_headers(headers, request_target, method="post", digest=None):
         key = serialization.load_pem_public_key(
             actor['publicKey']['publicKeyPem'].encode()
         )
+    except HTTPError as ex:
+        if ex.code == 410:
+            # Gone - we're probably processing a delete
+            # it would be nice to verify that, but sadly we can't.
+            return parse.urldefrag(sig_parts['keyId']).url
+        raise InvalidSignature('failed getting remote pubkey') from ex
     except Exception as ex:
         raise InvalidSignature('failed getting remote pubkey') from ex
     
@@ -127,17 +134,6 @@ def verify_headers(headers, request_target, method="post", digest=None):
 def wrapped_verify_headers(func):
     def _verify(event, context):
         try:
-            # filter out Delete messages
-            if event.get('body'):
-                try:
-                    body = json.loads(event['body'])
-                    if (body['type'] == 'Delete' and
-                        body['actor'] == parse.urldefrag(body['id']).url):
-                        return responses.HttpResponse('')
-                    
-                except (json.decoder.JSONDecodeError, KeyError):
-                    pass
-                
             sha = hashlib.sha256(event.get('body', b''))
             event['actor'] = verify_headers(
                 event['headers'],
