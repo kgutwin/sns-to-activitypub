@@ -1,5 +1,7 @@
 import os
+import re
 import json
+import markdown
 
 import config
 import dynamo
@@ -10,7 +12,10 @@ import apub.signatures
 def sns_to_post(record):
     message_id = record['Sns']['MessageId']
     message_timestamp = record['Sns']['Timestamp']
-    message_body = f'<p>{record["Sns"]["Message"]}</p>'
+    #message_body = f'<p>{record["Sns"]["Message"]}</p>'
+    # let's linkify things properly
+    message_md = re.sub(r'(https?://\w+)', '[\1](\1)', record['Sns']['Message'])
+    message_body = markdown.markdown(message_md)
     
     return {
         "@context": "https://www.w3.org/ns/activitystreams",
