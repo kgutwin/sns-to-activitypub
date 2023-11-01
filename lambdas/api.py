@@ -5,6 +5,7 @@ import base64
 import traceback
 
 import config
+import apub.utils
 import apub.signatures
 
 from apig_http import router
@@ -58,7 +59,8 @@ def actor_inbox(event, context):
     # double-check that the event's actor is the same as the one
     # sending the message
     body = json.loads(event['body'])
-    if body.get('id') != event['actor']:
+    if apub.utils.trim_frag(body.get('id', '')) != event['actor']:
+        print(apub.utils.trim_frag(body.get('id', '')), event['actor'])
         return HttpResponse('Mismatched key', 403)
     
     # send it on to the incoming handler for processing
