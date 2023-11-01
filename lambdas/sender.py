@@ -9,14 +9,31 @@ import apub.http
 import apub.signatures
 
 
+def cloudwatch_to_body(message):
+    """Turn a CloudWatch Alarm message into a legible body.
+    """
+    try:
+        msgd = json.loads(message)
+    except json.decoder.JSONDecodeError:
+        return f'<p>{message}</p>'
+    return f'''<p>CloudWatch Alarm: {msgd['AlarmName']} <br>
+Account: {msgd['AWSAccountId']} in {msgd['Region']} <br>
+At: {msgd['StateChangeTime']} <br>
+In State: {msgd['NewStateValue']} from {msgd['OldStateValue']} <br>
+Reason: {msgd['NewStateReason']}</p>'''
+
+
 def sns_to_post(record):
     message_id = record['Sns']['MessageId']
     message_timestamp = record['Sns']['Timestamp']
-    #message_body = f'<p>{record["Sns"]["Message"]}</p>'
-    # let's linkify things properly
-    message_md = re.sub(r'(https?://\S+)', r'[\1](\1)',
-                        record['Sns']['Message'])
-    message_body = markdown.markdown(message_md)
+
+    message = record['Sns']['Message']
+    if message.startswith('{') and 'arn:aws:cloudwatch' in message:
+        message_body = cloudwatch_to_body(message)
+    else:
+        # let's linkify things properly
+        message_md = re.sub(r'(https?://\S+)', r'[\1](\1)', message)
+        message_body = markdown.markdown(message_md)
     
     return {
         "@context": "https://www.w3.org/ns/activitystreams",
