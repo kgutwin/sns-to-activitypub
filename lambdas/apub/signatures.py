@@ -4,6 +4,7 @@ import json
 import boto3
 import base64
 import hashlib
+import traceback
 from datetime import datetime
 from urllib import request
 from urllib.error import HTTPError
@@ -139,7 +140,7 @@ def wrapped_verify_headers(func):
                 event['headers'],
                 event['requestContext']['http']['path'],
                 method=event['requestContext']['http']['method'].lower(),
-                digest=base64.b64encode(sha.digest()).decode()
+                digest=f'SHA-256={base64.b64encode(sha.digest()).decode()}'
             )
         except InvalidSignature as ex:
             traceback.print_exc()
